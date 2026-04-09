@@ -1,76 +1,76 @@
 import os
 import json
-import random
-import requests
 import sys
+import random
 
-# Environment variables (injected by validator)
+# ── LLM proxy (injected by validator) ──────────────────────────────────────
 API_BASE_URL = os.environ.get("API_BASE_URL", "")
-API_KEY = os.environ.get("API_KEY", "")
-SPACE_URL = os.environ.get("SPACE_URL", "https://tanishkushwah72-verity-human-verification.hf.space")
-MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4.1-mini")
+API_KEY      = os.environ.get("API_KEY", "")
+MODEL_NAME   = os.environ.get("MODEL_NAME", "gpt-4.1-mini")
 
-# Rule-based fallback (always works)
-def rule_priority(obs):
-    text = (obs.get("pr_title", "") + " " + obs.get("pr_description", "")).lower()
+# ── Rule-based fallback (always works, no network needed) ──────────────────
+def rule_priority(obs_dict):
+    text = (obs_dict.get("pr_title", "") + " " + obs_dict.get("pr_description", "")).lower()
     if any(kw in text for kw in ["urgent", "critical", "security", "hotfix"]):
         return 2
-    elif any(kw in text for kw in ["feature", "refactor", "migration"]):
+    elif any(kw in text for kw in ["feature", "refactor", "migration", "database"]):
         return 1
     else:
         return 0
 
-# Attempt to use LLM proxy, fallback to rule on any error
-def llm_priority(obs):
-    # If credentials missing, skip LLM
+# ── LLM-based priority (falls back to rule on ANY error) ──────────────────
+def llm_priority(obs_dict):
     if not API_BASE_URL or not API_KEY:
-        return rule_priority(obs)
+        return rule_priority(obs_dict)
     try:
         from openai import OpenAI
         client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY, timeout=10)
-        prompt = f"""PR Title: {obs.get('pr_title')}
-Description: {obs.get('pr_description')}
-Labels: {obs.get('labels')}
-Return only 0 (Low), 1 (Medium), or 2 (High)."""
+        prompt = (
+            f"PR Title: {obs_dict.get('pr_title')}\n"
+            f"Description: {obs_dict.get('pr_description')}\n"
+            f"Labels: {obs_dict.get('labels')}\n"
+            f"Respond with ONLY a single digit: 0 (Low), 1 (Medium), or 2 (High)."
+        )
         resp = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
-            max_tokens=5
+            max_tokens=5,
         )
-        return int(resp.choices[0].message.content.strip())
+        raw = resp.choices[0].message.content.strip()
+        # Extract first digit found, safe parse
+        for ch in raw:
+            if ch in "012":
+                return int(ch)
+        return rule_priority(obs_dict)
     except Exception as e:
-        print(f"LLM proxy error: {e}", file=sys.stderr)
-        return rule_priority(obs)
+        print(f"LLM error: {e}", file=sys.stderr)
+        return rule_priority(obs_dict)
 
-def evaluate_task(task, episodes=3):
-    base = SPACE_URL.rstrip('/')
-    total = 0.0
-    try:
-        # Reset to get session
-        r = requests.post(f"{base}/reset", json={"task": task}, timeout=10)
-        if r.status_code != 200:
-            return 0.5
-        sid = r.json()["session_id"]
-        for ep in range(episodes):
-            # Get PR
-            r2 = requests.post(f"{base}/reset", json={"session_id": sid, "task": task}, timeout=10)
-            if r2.status_code != 200:
-                total += 0.5
-                continue
-            obs = r2.json()["observation"]
-            action = llm_priority(obs)
-            r3 = requests.post(f"{base}/step?session_id={sid}", json={"priority": action}, timeout=10)
-            if r3.status_code != 200:
-                total += 0.5
-                continue
-            reward = r3.json().get("reward", 0.5)
-            total += reward
-            print(json.dumps({"event": "STEP", "episode": ep, "task": task, "action": action, "reward": reward}))
-    except Exception as e:
-        print(f"Evaluation error: {e}", file=sys.stderr)
-        return 0.5
-    return total / episodes
+# ── Run evaluation using local environment (NO HTTP calls) ─────────────────
+def evaluate_task(task_name, episodes=3):
+    # Import local environment directly — no network calls
+    from environment import CodeReviewEnv, Action
+
+    env = CodeReviewEnv()
+    env.set_task(task_name)
+
+    total_reward = 0.0
+    for ep in range(episodes):
+        obs = env.reset()
+        obs_dict = obs.dict()
+        action_int = llm_priority(obs_dict)
+        _, reward, done, info = env.step(Action(priority=action_int))
+        total_reward += reward
+        print(json.dumps({
+            "event": "STEP",
+            "episode": ep,
+            "task": task_name,
+            "action": action_int,
+            "reward": reward,
+        }))
+
+    return total_reward / episodes
 
 def main():
     print("[START]")
