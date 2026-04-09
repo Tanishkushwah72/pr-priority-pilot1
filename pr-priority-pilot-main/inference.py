@@ -5,29 +5,33 @@ import requests
 import sys
 import time
 
-# ---------- Environment variables (injected by validator) ----------
+# ---------- Environment variables ----------
 API_BASE_URL = os.environ.get("API_BASE_URL", "")
 API_KEY = os.environ.get("API_KEY", "")
 SPACE_URL = os.environ.get("SPACE_URL", "https://tanishkushwah72-verity-human-verification.hf.space")
 MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4.1-mini")
 
-# ---------- Helper: rule‑based priority (fallback) ----------
+# ---------- Rule-based fallback (always works) ----------
 def rule_priority(obs):
-    text = (obs.get("pr_title", "") + " " + obs.get("pr_description", "")).lower()
-    if any(kw in text for kw in ["urgent", "critical", "security", "hotfix"]):
-        return 2
-    elif any(kw in text for kw in ["feature", "refactor", "migration"]):
-        return 1
-    else:
-        return 0
-
-# ---------- Try to use real LLM proxy, fallback to rule if fails ----------
-def llm_priority(obs):
-    # If proxy credentials are missing, use rule immediately
-    if not API_BASE_URL or not API_KEY:
-        print("⚠️ Proxy credentials missing, using rule-based priority", file=sys.stderr)
-        return rule_priority(obs)
     try:
+        text = (obs.get("pr_title", "") + " " + obs.get("pr_description", "")).lower()
+        if any(kw in text for kw in ["urgent", "critical", "security", "hotfix", "crash"]):
+            return 2
+        elif any(kw in text for kw in ["feature", "refactor", "migration", "update"]):
+            return 1
+        else:
+            return 0
+    except:
+        return 1  # safe fallback
+
+# ---------- LLM proxy call (fully wrapped) ----------
+def llm_priority(obs):
+    # If credentials missing, skip LLM
+    if not API_BASE_URL or not API_KEY:
+        return rule_priority(obs)
+    
+    try:
+        # Import inside try to avoid import errors
         from openai import OpenAI
         client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY, timeout=10)
         prompt = f"""PR Title: {obs.get('pr_title')}
@@ -42,9 +46,11 @@ Return only 0 (Low), 1 (Medium), or 2 (High)."""
         )
         return int(resp.choices[0].message.content.strip())
     except Exception as e:
-        print(f"❌ LLM proxy call failed: {e}, using rule-based priority", file=sys.stderr)
+        # Print error but don't crash
+        print(f"⚠️ LLM proxy error: {type(e).__name__}: {e}", file=sys.stderr)
         return rule_priority(obs)
 
+# ---------- Evaluate one task ----------
 def evaluate_task(task, episodes=3):
     base = SPACE_URL.rstrip('/')
     total = 0.0
@@ -55,7 +61,7 @@ def evaluate_task(task, episodes=3):
             return 0.5
         sid = r.json()["session_id"]
         for ep in range(episodes):
-            # Get PR
+            # Get a PR
             r2 = requests.post(f"{base}/reset", json={"session_id": sid, "task": task}, timeout=10)
             if r2.status_code != 200:
                 total += 0.5
@@ -70,10 +76,11 @@ def evaluate_task(task, episodes=3):
             total += reward
             print(json.dumps({"event": "STEP", "episode": ep, "task": task, "action": action, "reward": reward}))
     except Exception as e:
-        print(f"Evaluation error: {e}", file=sys.stderr)
+        print(f"⚠️ Evaluation error: {e}", file=sys.stderr)
         return 0.5
     return total / episodes
 
+# ---------- Main ----------
 def main():
     print("[START]")
     scores = {}
