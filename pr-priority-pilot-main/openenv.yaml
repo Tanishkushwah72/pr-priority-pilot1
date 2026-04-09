@@ -1,7 +1,9 @@
 name: pr-priority-pilot
-version: 1.0
+version: "1.0"
 description: Code review prioritizer with 3 tasks
-actions: Discrete(3)
+actions:
+  type: Discrete
+  n: 3
 observations:
   pr_title: string
   pr_description: string
@@ -9,9 +11,18 @@ observations:
   labels: list
   author: string
 tasks:
-  - easy
-  - medium
-  - hard
+  - name: easy
+    grader:
+      type: reward
+      range: (0, 1)
+  - name: medium
+    grader:
+      type: reward
+      range: (0, 1)
+  - name: hard
+    grader:
+      type: reward
+      range: (0, 1)
 endpoints:
   reset: /reset
   step: /step
