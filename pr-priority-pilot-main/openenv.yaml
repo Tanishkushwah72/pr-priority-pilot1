@@ -14,15 +14,15 @@ tasks:
   - name: easy
     grader:
       type: reward
-      range: (0, 1)
+      range: "(0, 1)"
   - name: medium
     grader:
       type: reward
-      range: (0, 1)
+      range: "(0, 1)"
   - name: hard
     grader:
       type: reward
-      range: (0, 1)
+      range: "(0, 1)"
 endpoints:
   reset: /reset
   step: /step
