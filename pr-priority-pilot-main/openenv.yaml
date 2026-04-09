@@ -1,29 +1,39 @@
 name: pr-priority-pilot
 version: "1.0"
-description: Code review prioritizer with 3 tasks
+description: Code review prioritizer with realistic multi-level tasks
+
 actions:
   type: Discrete
   n: 3
+
 observations:
-  pr_title: string
-  pr_description: string
-  files_changed: int
-  labels: list
-  author: string
+  pr_title:
+    type: string
+  pr_description:
+    type: string
+  files_changed:
+    type: integer
+  labels:
+    type: array
+    items: string
+  author:
+    type: string
+
 tasks:
   - name: easy
+    description: Simple PRs like typo fixes and minor documentation changes
     grader:
       type: reward
       range: "(0, 1)"
+
   - name: medium
+    description: Feature additions, UI updates, and refactoring tasks
     grader:
       type: reward
       range: "(0, 1)"
+
   - name: hard
+    description: Critical bug fixes, security patches, and production issues
     grader:
       type: reward
       range: "(0, 1)"
-endpoints:
-  reset: /reset
-  step: /step
-  state: /state
