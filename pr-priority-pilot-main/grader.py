@@ -1,7 +1,23 @@
 def grader_fn(pred, truth):
-    if pred == truth:
-        return 0.9
-    elif abs(pred - truth) == 1:
-        return 0.6
+    # Safety checks
+    try:
+        pred = int(pred)
+        truth = int(truth)
+    except:
+        return 0.1  # strong penalty for invalid output
+
+    # Clamp values
+    pred = max(0, min(2, pred))
+    truth = max(0, min(2, truth))
+
+    diff = abs(pred - truth)
+
+    # Smooth scoring
+    if diff == 0:
+        score = 0.95
+    elif diff == 1:
+        score = 0.65
     else:
-        return 0.3
+        score = 0.35
+
+    return round(score, 3)
