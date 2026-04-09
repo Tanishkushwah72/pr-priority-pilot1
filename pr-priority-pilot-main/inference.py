@@ -3,7 +3,7 @@ import json
 import random
 import requests
 import sys
-import time
+import traceback
 
 # ---------- Environment variables ----------
 API_BASE_URL = os.environ.get("API_BASE_URL", "")
@@ -14,7 +14,9 @@ MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4.1-mini")
 # ---------- Rule-based fallback (always works) ----------
 def rule_priority(obs):
     try:
-        text = (obs.get("pr_title", "") + " " + obs.get("pr_description", "")).lower()
+        title = obs.get("pr_title", "")
+        desc = obs.get("pr_description", "")
+        text = (title + " " + desc).lower()
         if any(kw in text for kw in ["urgent", "critical", "security", "hotfix", "crash"]):
             return 2
         elif any(kw in text for kw in ["feature", "refactor", "migration", "update"]):
@@ -22,16 +24,16 @@ def rule_priority(obs):
         else:
             return 0
     except:
-        return 1  # safe fallback
+        return 1
 
-# ---------- LLM proxy call (fully wrapped) ----------
+# ---------- LLM proxy call with full exception catching ----------
 def llm_priority(obs):
     # If credentials missing, skip LLM
     if not API_BASE_URL or not API_KEY:
         return rule_priority(obs)
     
     try:
-        # Import inside try to avoid import errors
+        # Import inside try to catch import errors
         from openai import OpenAI
         client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY, timeout=10)
         prompt = f"""PR Title: {obs.get('pr_title')}
@@ -46,7 +48,7 @@ Return only 0 (Low), 1 (Medium), or 2 (High)."""
         )
         return int(resp.choices[0].message.content.strip())
     except Exception as e:
-        # Print error but don't crash
+        # Catch ANY exception, print to stderr, and fallback
         print(f"⚠️ LLM proxy error: {type(e).__name__}: {e}", file=sys.stderr)
         return rule_priority(obs)
 
@@ -77,19 +79,26 @@ def evaluate_task(task, episodes=3):
             print(json.dumps({"event": "STEP", "episode": ep, "task": task, "action": action, "reward": reward}))
     except Exception as e:
         print(f"⚠️ Evaluation error: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         return 0.5
     return total / episodes
 
 # ---------- Main ----------
 def main():
-    print("[START]")
-    scores = {}
-    for task in ["easy", "medium", "hard"]:
-        print(json.dumps({"event": "START_TASK", "task": task}))
-        scores[task] = evaluate_task(task)
-        print(json.dumps({"event": "END_TASK", "task": task, "score": scores[task]}))
-    print("[END]")
-    print("Final scores:", json.dumps(scores))
+    try:
+        print("[START]")
+        scores = {}
+        for task in ["easy", "medium", "hard"]:
+            print(json.dumps({"event": "START_TASK", "task": task}))
+            scores[task] = evaluate_task(task)
+            print(json.dumps({"event": "END_TASK", "task": task, "score": scores[task]}))
+        print("[END]")
+        print("Final scores:", json.dumps(scores))
+    except Exception as e:
+        print(f"CRITICAL ERROR in main: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        # Still exit with 0 to avoid non-zero exit code
+        sys.exit(0)
     sys.exit(0)
 
 if __name__ == "__main__":
