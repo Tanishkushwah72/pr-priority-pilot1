@@ -1,0 +1,15 @@
+name: pr-priority-pilot
+version: 1.0
+description: Simple three‑task prioritizer with strict (0,1) rewards
+actions: Discrete(3)
+observations:
+  title: string
+  description: string
+tasks:
+  - easy
+  - medium
+  - hard
+endpoints:
+  reset: /reset
+  step: /step
+  state: /state
