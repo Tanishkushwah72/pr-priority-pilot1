@@ -10,6 +10,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 dependencies = [
+    "fastapi==0.104.1",
+    "uvicorn==0.24.0",
     "pydantic==2.5.0",
     "openai>=1.0.0",
     "huggingface_hub==0.20.3",
@@ -17,4 +19,5 @@ dependencies = [
 ]
 
 [project.scripts]
+server = "app:main"
 inference = "inference:main"
